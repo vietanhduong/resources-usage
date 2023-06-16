@@ -33,6 +33,8 @@ type Service struct {
 	Replicas  int32
 	Usage     Resources
 	Request   Resources
+	Action    string
+	Note      string
 }
 
 func (o *Service) CSV() string {
@@ -48,18 +50,20 @@ func (o *Service) CSV() string {
 		memory = fmt.Sprintf("%vMi/%vMi", o.Usage.Memory.Value()/(1024*1024), o.Request.Memory.Value()/(1024*1024))
 	}
 
-	return fmt.Sprintf("%s,%s,%s,%d,%s,%s",
+	return fmt.Sprintf("%s,%s,%s,%d,%s,%s,%s,%s",
 		o.Namespace,
 		o.Name,
 		o.Kind,
 		o.Replicas,
 		cpu,
-		memory)
+		memory,
+		o.Action,
+		o.Note)
 }
 
 func export(cfg exportConfig) error {
 	ignoreNamespaces := sets.New(cfg.IgnoreNamespaces...)
-	fmt.Fprintln(os.Stdout, "Namespace,Name,Kind,Replicas,CPU Usage/CPU Request(m),Memory Usage/Memory Request(Mi)")
+	fmt.Fprintln(os.Stdout, "Namespace,Name,Kind,Replicas,CPU Usage/CPU Request(m),Memory Usage/Memory Request(Mi),Action,Note")
 	// list all namespaces
 	namespaces, err := cfg.KubeClient.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
@@ -126,6 +130,7 @@ func handleExportDeployments(cfg exportConfig, ns corev1.Namespace) ([]Service, 
 				services[i].Usage.Memory.Add(*container.Usage.Memory())
 			}
 		}
+		services[i] = verdict(services[i])
 	}
 	return services, nil
 }
@@ -165,6 +170,34 @@ func handleStatefulSets(cfg exportConfig, ns corev1.Namespace) ([]Service, error
 				services[i].Usage.Memory.Add(*container.Usage.Memory())
 			}
 		}
+		services[i] = verdict(services[i])
 	}
 	return services, nil
+}
+
+func verdict(s Service) Service {
+	if s.Replicas == 0 {
+		s.Action = "Need remove"
+		return s
+	}
+	s.Action = "Good"
+
+	if diff := s.Request.CPU.MilliValue() - s.Usage.CPU.MilliValue(); diff > 0 &&
+		diff > int64((10*s.Request.CPU.MilliValue())/100) { // need update if the diff greater than 10% request
+		s.Action = "Need update"
+		s.Note = fmt.Sprintf("Need reduce CPU %.2f%%(%vm)", percent(diff, s.Request.CPU.MilliValue()), diff)
+	}
+
+	if diff := s.Request.Memory.Value() - s.Usage.Memory.Value(); diff > 0 &&
+		diff > int64((10*s.Request.Memory.Value())/100) { // need update if the diff greater than 10% request
+		s.Action = "Need update"
+		if s.Note != "" {
+			s.Note = fmt.Sprintf("%s; Need reduce Memory %.2f%%(%vMi)", s.Note, percent(diff, s.Request.Memory.Value()), diff/(1024*1024))
+		}
+	}
+	return s
+}
+
+func percent(in int64, all int64) float64 {
+	return (float64(in) / float64(all)) * float64(100)
 }
