@@ -182,17 +182,19 @@ func verdict(s Service) Service {
 	}
 	s.Action = "Good"
 
-	if diff := s.Request.CPU.MilliValue() - s.Usage.CPU.MilliValue(); diff > 0 &&
-		diff > int64((10*s.Request.CPU.MilliValue())/100) { // need update if the diff greater than 10% request
+	if diff := (s.Request.CPU.MilliValue() - s.Usage.CPU.MilliValue()) / int64(s.Replicas); diff > 0 &&
+		diff > int64((10*s.Request.CPU.MilliValue())/int64(s.Replicas)/100) { // need update if the diff greater than 10% request
 		s.Action = "Need update"
-		s.Note = fmt.Sprintf("Need reduce CPU %.2f%%(%vm)", percent(diff, s.Request.CPU.MilliValue()), diff)
+		s.Note = fmt.Sprintf("Need reduce CPU %.2f%%(%vm per pod)", percent(diff, s.Request.CPU.MilliValue()/int64(s.Replicas)), diff)
 	}
 
-	if diff := s.Request.Memory.Value() - s.Usage.Memory.Value(); diff > 0 &&
-		diff > int64((10*s.Request.Memory.Value())/100) { // need update if the diff greater than 10% request
+	if diff := (s.Request.Memory.Value() - s.Usage.Memory.Value()) / int64(s.Replicas); diff > 0 &&
+		diff > int64((10*s.Request.Memory.Value())/int64(s.Replicas)/100) { // need update if the diff greater than 10% request
 		s.Action = "Need update"
 		if s.Note != "" {
-			s.Note = fmt.Sprintf("%s; Need reduce Memory %.2f%%(%vMi)", s.Note, percent(diff, s.Request.Memory.Value()), diff/(1024*1024))
+			s.Note = fmt.Sprintf("%s; Need reduce Memory %.2f%%(%vMi per pod)", s.Note, percent(diff, s.Request.Memory.Value()/int64(s.Replicas)), diff/(1024*1024))
+		} else {
+			s.Note = fmt.Sprintf("Need reduce Memory %.2f%%(%vMi per pod)", percent(diff, s.Request.Memory.Value()/int64(s.Replicas)), diff/(1024*1024))
 		}
 	}
 	return s
