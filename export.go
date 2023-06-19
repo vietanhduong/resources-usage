@@ -22,8 +22,8 @@ type exportConfig struct {
 }
 
 type Resources struct {
-	CPU    resource.Quantity
-	Memory resource.Quantity
+	CPU    *resource.Quantity
+	Memory *resource.Quantity
 }
 
 type Service struct {
@@ -31,8 +31,8 @@ type Service struct {
 	Namespace string
 	Name      string
 	Replicas  int32
-	Usage     Resources
-	Request   Resources
+	Usage     *Resources
+	Request   *Resources
 	Action    string
 	Note      string
 }
@@ -111,6 +111,14 @@ func handleExportDeployments(cfg exportConfig, ns corev1.Namespace) ([]Service, 
 			Kind:      "Deployment",
 			Namespace: deploy.Namespace,
 			Name:      deploy.Name,
+			Usage: &Resources{
+				CPU:    resource.NewQuantity(0, resource.DecimalSI),
+				Memory: resource.NewQuantity(0, resource.BinarySI),
+			},
+			Request: &Resources{
+				CPU:    resource.NewQuantity(0, resource.DecimalSI),
+				Memory: resource.NewQuantity(0, resource.BinarySI),
+			},
 		}
 		for _, container := range deploy.Spec.Template.Spec.Containers {
 			services[i].Request.CPU.Add(*container.Resources.Requests.Cpu())
@@ -124,6 +132,9 @@ func handleExportDeployments(cfg exportConfig, ns corev1.Namespace) ([]Service, 
 			return nil, err
 		}
 		services[i].Replicas = int32(len(podMetrics.Items))
+		services[i].Request.CPU = resource.NewQuantity(int64(services[i].Replicas)*services[i].Request.CPU.Value(), services[i].Request.CPU.Format)
+		services[i].Request.Memory = resource.NewQuantity(int64(services[i].Replicas)*services[i].Request.Memory.Value(), services[i].Request.Memory.Format)
+
 		for _, m := range podMetrics.Items {
 			for _, container := range m.Containers {
 				services[i].Usage.CPU.Add(*container.Usage.Cpu())
@@ -151,6 +162,14 @@ func handleStatefulSets(cfg exportConfig, ns corev1.Namespace) ([]Service, error
 			Kind:      "StatefulSets",
 			Namespace: sts.Namespace,
 			Name:      sts.Name,
+			Usage: &Resources{
+				CPU:    resource.NewQuantity(0, resource.DecimalSI),
+				Memory: resource.NewQuantity(0, resource.BinarySI),
+			},
+			Request: &Resources{
+				CPU:    resource.NewQuantity(0, resource.DecimalSI),
+				Memory: resource.NewQuantity(0, resource.BinarySI),
+			},
 		}
 		for _, container := range sts.Spec.Template.Spec.Containers {
 			services[i].Request.CPU.Add(*container.Resources.Requests.Cpu())
